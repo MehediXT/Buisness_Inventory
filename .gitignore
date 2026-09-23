@@ -1,0 +1,22 @@
+# Virtual environments
+venv/
+.venv/
+
+# Python-generated files
+__pycache__/
+*.py[cod]
+
+# Django/local runtime files
+*.sqlite3
+staticfiles/
+media/
+
+# Local configuration and editor files
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+
+# Empty nested repository; the project repository is this directory.
+/Buisness_Inventory/
