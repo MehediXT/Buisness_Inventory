@@ -2,7 +2,7 @@ from .models import User, Company
 from .serializers import UserSerializer, CompanySerializer
 from rest_framework import viewsets, permissions
 from .permissions import IsAdmin, IsAdminManager
-from rest_framework import status, APIView
+from rest_framework.views import status, APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
@@ -24,7 +24,7 @@ class CompanyListCreateView(APIView):
 
 
 class CompanyDetailView(APIView):
-    permission_classes = [IsAdminOrManager]
+    permission_classes = [IsAdminManager]
 
     def get_object(self, pk):
         try:
@@ -72,7 +72,7 @@ class CompanyDetailView(APIView):
 
 
 class UserListCreateView(APIView):
-    permission_classes = [IsAdminOrManager]
+    permission_classes = [IsAdminManager]
 
     def get(self, request):
         if request.user.role == "manager":

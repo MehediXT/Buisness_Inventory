@@ -20,3 +20,6 @@ media/
 
 # Empty nested repository; the project repository is this directory.
 /Buisness_Inventory/
+database.txt
+.postman/
+postman
