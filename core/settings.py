@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
+    'django.contrib.staticfiles',
     'django_filters',
     'rest_framework',
     'rest_framework_simplejwt',
@@ -117,6 +118,7 @@ REST_FRAMEWORK = {
     ]
 }
 SECRET_KEY = "WhoSoSerious"
+
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),

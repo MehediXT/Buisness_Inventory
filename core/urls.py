@@ -23,6 +23,6 @@ urlpatterns = [
     path('api/token/', TokenObtainPairView.as_view()),
     path('api/token/refresh/', TokenRefreshView.as_view()),
     path('api/accounts/', include('accounts.urls')),
-    # path('api/inventory/', include('inventory.urls')),
+    path('api/inventory/', include('inventory.urls')),
     # path('api/billing/', include('billing.urls')),
 ]
