@@ -1,8 +1,8 @@
 from .models import User, Company
 from .serializers import UserSerializer, CompanySerializer
-from rest_framework import viewsets, permissions
 from .permissions import IsAdmin, IsAdminManager
-from rest_framework.views import status, APIView
+from rest_framework import status
+from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
@@ -32,20 +32,29 @@ class CompanyDetailView(APIView):
         except Company.DoesNotExist:
             return None
 
-    def get(self, request, pk):
+    def check_manager_access(self, request, pk):
         if request.user.role == "manager":
-            user = request.user
-            if not user.company.id== pk:
-                return Response(
-                    {"detail": "You do not have permission to perform this action."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+            if not request.user.company or request.user.company.id != pk:
+                return False
+        return True
+
+    def get(self, request, pk):
+        if not self.check_manager_access(request, pk):
+            return Response(
+                {"detail": "You do not have permission to perform this action."},
+                status=status.HTTP_403_FORBIDDEN
+            )
         company = self.get_object(pk)
         if not company:
             return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
         return Response(CompanySerializer(company).data)
 
     def put(self, request, pk):
+        if not self.check_manager_access(request, pk):
+            return Response(
+                {"detail": "You do not have permission to perform this action."},
+                status=status.HTTP_403_FORBIDDEN
+            )
         company = self.get_object(pk)
         if not company:
             return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
@@ -55,6 +64,11 @@ class CompanyDetailView(APIView):
         return Response(serializer.data)
 
     def patch(self, request, pk):
+        if not self.check_manager_access(request, pk):
+            return Response(
+                {"detail": "You do not have permission to perform this action."},
+                status=status.HTTP_403_FORBIDDEN
+            )
         company = self.get_object(pk)
         if not company:
             return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
@@ -64,6 +78,11 @@ class CompanyDetailView(APIView):
         return Response(serializer.data)
 
     def delete(self, request, pk):
+        if request.user.role != "admin":
+            return Response(
+                {"detail": "Only admins can delete companies."},
+                status=status.HTTP_403_FORBIDDEN
+            )
         company = self.get_object(pk)
         if not company:
             return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
@@ -76,7 +95,7 @@ class UserListCreateView(APIView):
 
     def get(self, request):
         if request.user.role == "manager":
-            users = User.objects.filter(company__id=request.user.company.id)
+            users = User.objects.filter(company=request.user.company)
             serializer = UserSerializer(users, many=True)
             return Response(serializer.data)
         users = User.objects.all()
@@ -85,20 +104,28 @@ class UserListCreateView(APIView):
 
     def post(self, request):
         if request.user.role == "manager":
-            if not request.data.get("role") == "staff":
+            if request.data.get("role") != "staff":
                 return Response(
-                        {"detail": "You can not have the permission to create manager or admin."},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-            if not request.data.get("company") == request.user.company.id:
+                    {"detail": "You do not have permission to create manager or admin."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            company_id = request.data.get("company")
+            if company_id and str(company_id) != str(request.user.company_id):
                 return Response(
-                        {"detail": f"You can not have the permission to create user in company {request.data.get('company')}"},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
+                    {"detail": "You do not have permission to create users for another company."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            serializer = UserSerializer(data=request.data, context={'request': request})
+            serializer.is_valid(raise_exception=True)
+            serializer.save(company=request.user.company)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-        serializer = UserSerializer(data=request.data)
+        serializer = UserSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
-        serializer.save(company=request.user.company)
+        if 'company' not in serializer.validated_data and request.user.company:
+            serializer.save(company=request.user.company)
+        else:
+            serializer.save()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
@@ -106,9 +133,20 @@ class UserDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get_object(self, pk, request):
-        try:
-            return User.objects.get(pk=pk, company=request.user.company)
-        except User.DoesNotExist:
+        user = request.user
+        if user.role == 'admin':
+            try:
+                return User.objects.get(pk=pk)
+            except User.DoesNotExist:
+                return None
+        elif user.role == 'manager':
+            try:
+                return User.objects.get(pk=pk, company=user.company)
+            except User.DoesNotExist:
+                return None
+        else:
+            if user.id == pk:
+                return user
             return None
 
     def get(self, request, pk):
@@ -121,7 +159,9 @@ class UserDetailView(APIView):
         user = self.get_object(pk, request)
         if not user:
             return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
-        serializer = UserSerializer(user, data=request.data)
+        if request.user.role == 'manager' and user.role in ['admin', 'manager'] and user.id != request.user.id:
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+        serializer = UserSerializer(user, data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
@@ -130,14 +170,20 @@ class UserDetailView(APIView):
         user = self.get_object(pk, request)
         if not user:
             return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
-        serializer = UserSerializer(user, data=request.data, partial=True)
+        if request.user.role == 'manager' and user.role in ['admin', 'manager'] and user.id != request.user.id:
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+        serializer = UserSerializer(user, data=request.data, partial=True, context={'request': request})
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
 
     def delete(self, request, pk):
+        if request.user.role == 'staff':
+            return Response({'detail': 'Staff cannot delete user accounts.'}, status=status.HTTP_403_FORBIDDEN)
         user = self.get_object(pk, request)
         if not user:
             return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+        if request.user.role == 'manager' and (user.role in ['admin', 'manager'] or user.id == request.user.id):
+            return Response({'detail': 'Managers cannot delete administrators or managers.'}, status=status.HTTP_403_FORBIDDEN)
         user.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
